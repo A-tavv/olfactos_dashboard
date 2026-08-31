@@ -19,7 +19,7 @@ from supabase import create_client
 from datetime import datetime, timedelta
 
 # ---- FILL THESE IN (same anon key as the firmware) ----
-SUPABASE_URL = "https://qhlrtcidqquwqxnqggyk.supabase.co/rest/v1/"
+SUPABASE_URL = "https://qhlrtcidqquwqxnqggyk.supabase.co"
 SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFobHJ0Y2lkcXF1d3F4bnFnZ3lrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc4NTQ2MDEsImV4cCI6MjEwMzQzMDYwMX0.EozmqNXYZ5TbjnPmpGUL88JbO973715mQUHcWKUi7g8"
 
 st.set_page_config(page_title="Olfactos Pilot - De Laat", layout="wide", page_icon="🍌")
