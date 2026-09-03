@@ -34,7 +34,6 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
-st.markdown("<meta http-equiv='refresh' content='10'>", unsafe_allow_html=True)
 
 # ---- Pick which run to look at ----
 runs_resp = supabase.table("experiment_runs").select("*").order("created_at", desc=True).execute()
@@ -47,40 +46,7 @@ run_labels = [f"{r['run_id']} — {r.get('fruit','?')} ({r.get('fruit_stage','?'
 selected_idx = st.selectbox("Select run", range(len(runs)), format_func=lambda i: run_labels[i])
 selected_run_id = runs[selected_idx]["run_id"]
 
-# ---- Fetch readings for this run ----
-response = (
-    supabase.table("sensor_readings")
-    .select("*")
-    .eq("run_id", selected_run_id)
-    .order("device_timestamp_ms", desc=False)
-    .execute()
-)
-data = response.data
-
-if not data:
-    st.info("No readings yet for this run. Waiting for the node to send its first upload...")
-    st.stop()
-
-df = pd.DataFrame(data)
-df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
-latest = df.iloc[-1]
-
-# ---- Current reading (big numbers) ----
-st.subheader("Current reading")
-cols = st.columns(6)
-cols[0].metric("VOC (SGP41)", f"{latest['sgp41_voc_raw']}")
-cols[1].metric("CO2", f"{latest['scd41_co2_ppm']:.0f} ppm" if pd.notna(latest['scd41_co2_ppm']) else "—")
-cols[2].metric("BME Gas", f"{latest['bme688_gas_ohm']:.0f} Ω" if pd.notna(latest['bme688_gas_ohm']) else "—")
-cols[3].metric("Temp (SHT45)", f"{latest['sht45_temp_c']:.1f}°C" if pd.notna(latest['sht45_temp_c']) else "—")
-cols[4].metric("Humidity (SHT45)", f"{latest['sht45_rh_pct']:.1f}%" if pd.notna(latest['sht45_rh_pct']) else "—")
-cols[5].metric("MQ3 / MQ138 (V)", f"{latest['mq3_ao_v']:.2f} / {latest['mq138_ao_v']:.2f}")
-
-st.caption(f"Node: {latest['node_id']} | Phase: {latest['phase']} | Last update: {latest['timestamp']}")
-st.divider()
-
-# ---- Time-series charts ----
-st.subheader("Trends for this run")
-
+# ---- Helper function for charts (Moved outside the fragment) ----
 def line_chart(df, y_col, title, color):
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df["timestamp"], y=df[y_col], mode="lines",
@@ -89,22 +55,66 @@ def line_chart(df, y_col, title, color):
                        template="plotly_white", showlegend=False)
     return fig
 
-c1, c2 = st.columns(2)
-with c1:
-    st.plotly_chart(line_chart(df, "sgp41_voc_raw", "VOC index (SGP41)", "#0f7b6c"), use_container_width=True)
-    st.plotly_chart(line_chart(df, "mq3_ao_v", "MQ3 (ethanol) — volts", "#d97706"), use_container_width=True)
-    st.plotly_chart(line_chart(df, "scd41_co2_ppm", "CO2 (respiration)", "#2563eb"), use_container_width=True)
-    st.plotly_chart(line_chart(df, "mq3_delta_baseline", "MQ3 delta from baseline", "#b45309"), use_container_width=True)
+# ==============================================================
+# اینجا شروع همون جادویی هست که بدون رفرش کل صفحه، دیتا رو لایو میکنه
+# ==============================================================
+@st.fragment(run_every="10s")
+def live_dashboard(run_id):
+    # ---- Fetch readings for this run ----
+    response = (
+        supabase.table("sensor_readings")
+        .select("*")
+        .eq("run_id", run_id)
+        .order("device_timestamp_ms", desc=False)
+        .execute()
+    )
+    data = response.data
 
-with c2:
-    st.plotly_chart(line_chart(df, "mq138_ao_v", "MQ138 (broad VOC) — volts", "#dc2626"), use_container_width=True)
-    st.plotly_chart(line_chart(df, "sht45_temp_c", "Temperature (SHT45)", "#7c3aed"), use_container_width=True)
-    st.plotly_chart(line_chart(df, "sht45_rh_pct", "Humidity (SHT45)", "#0891b2"), use_container_width=True)
-    st.plotly_chart(line_chart(df, "mq138_delta_baseline", "MQ138 delta from baseline", "#991b1b"), use_container_width=True)
+    if not data:
+        st.info("No readings yet for this run. Waiting for the node to send its first upload...")
+        return # اینجا باید return باشه نه stop
 
-st.divider()
-with st.expander("Raw data (for export / ML use)"):
-    st.dataframe(df, use_container_width=True)
-    st.download_button("Download this run as CSV", df.to_csv(index=False), file_name=f"{selected_run_id}.csv")
+    df = pd.DataFrame(data)
+    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+    latest = df.iloc[-1]
 
-st.caption("Olfactos — early spoilage detection pilot. Refreshes automatically every 10 seconds.")
+    # ---- Current reading (big numbers) ----
+    st.subheader("Current reading")
+    cols = st.columns(6)
+    cols[0].metric("VOC (SGP41)", f"{latest['sgp41_voc_raw']}")
+    cols[1].metric("CO2", f"{latest['scd41_co2_ppm']:.0f} ppm" if pd.notna(latest['scd41_co2_ppm']) else "—")
+    cols[2].metric("BME Gas", f"{latest['bme688_gas_ohm']:.0f} Ω" if pd.notna(latest['bme688_gas_ohm']) else "—")
+    cols[3].metric("Temp (SHT45)", f"{latest['sht45_temp_c']:.1f}°C" if pd.notna(latest['sht45_temp_c']) else "—")
+    cols[4].metric("Humidity (SHT45)", f"{latest['sht45_rh_pct']:.1f}%" if pd.notna(latest['sht45_rh_pct']) else "—")
+    cols[5].metric("MQ3 / MQ138 (V)", f"{latest['mq3_ao_v']:.2f} / {latest['mq138_ao_v']:.2f}")
+
+    st.caption(f"Node: {latest['node_id']} | Phase: {latest['phase']} | Last update: {latest['timestamp']}")
+    st.divider()
+
+    # ---- Time-series charts ----
+    st.subheader("Trends for this run")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.plotly_chart(line_chart(df, "sgp41_voc_raw", "VOC index (SGP41)", "#0f7b6c"), use_container_width=True)
+        st.plotly_chart(line_chart(df, "mq3_ao_v", "MQ3 (ethanol) — volts", "#d97706"), use_container_width=True)
+        st.plotly_chart(line_chart(df, "scd41_co2_ppm", "CO2 (respiration)", "#2563eb"), use_container_width=True)
+        st.plotly_chart(line_chart(df, "mq3_delta_baseline", "MQ3 delta from baseline", "#b45309"), use_container_width=True)
+
+    with c2:
+        st.plotly_chart(line_chart(df, "mq138_ao_v", "MQ138 (broad VOC) — volts", "#dc2626"), use_container_width=True)
+        st.plotly_chart(line_chart(df, "sht45_temp_c", "Temperature (SHT45)", "#7c3aed"), use_container_width=True)
+        st.plotly_chart(line_chart(df, "sht45_rh_pct", "Humidity (SHT45)", "#0891b2"), use_container_width=True)
+        st.plotly_chart(line_chart(df, "mq138_delta_baseline", "MQ138 delta from baseline", "#991b1b"), use_container_width=True)
+
+    st.divider()
+    with st.expander("Raw data (for export / ML use)"):
+        st.dataframe(df, use_container_width=True)
+        st.download_button("Download this run as CSV", df.to_csv(index=False), file_name=f"{run_id}.csv")
+
+# ==============================================================
+# اینجا تابع رو فراخوانی می‌کنیم تا داشبورد اجرا بشه
+# ==============================================================
+live_dashboard(selected_run_id)
+
+st.caption("Olfactos — early spoilage detection pilot. Refreshes seamlessly every 10 seconds.")
